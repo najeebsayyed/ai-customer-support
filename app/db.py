@@ -1,9 +1,36 @@
+import contextlib
 import time
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.config import settings
+
+POLLER_LOCK_KEY = 74839201948271
+
+
+@contextlib.contextmanager
+def acquire_poller_lock():
+    """Acquire a Postgres advisory lock to prevent concurrent polling across processes.
+    Yields True if acquired, False if another process holds the lock.
+    """
+    with connect() as conn:
+        row = conn.execute(
+            "select pg_try_advisory_lock(%s) as acquired",
+            (POLLER_LOCK_KEY,),
+        ).fetchone()
+        acquired = bool(row and row["acquired"])
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                try:
+                    conn.execute(
+                        "select pg_advisory_unlock(%s)",
+                        (POLLER_LOCK_KEY,),
+                    )
+                except Exception:
+                    pass
 
 
 def connect(retries: int = 3, delay: float = 0.5) -> psycopg.Connection:

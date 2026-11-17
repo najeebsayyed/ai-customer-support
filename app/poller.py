@@ -1,6 +1,7 @@
 import logging
 import time
 
+from app import db
 from app.config import settings
 from app.gmail import Gmail
 from app.pipeline import handle_message
@@ -10,15 +11,19 @@ logger = logging.getLogger("poller")
 
 
 def poll_once() -> int:
-    gmail = Gmail()
-    message_ids = gmail.list_new_message_ids()
-    for message_id in message_ids:
-        try:
-            handle_message(gmail, message_id)
-        except Exception:
-            # One bad email must not stop the loop.
-            logger.exception("Failed to process %s", message_id)
-    return len(message_ids)
+    with db.acquire_poller_lock() as acquired:
+        if not acquired:
+            logger.info("Another poller is currently running; skipping this execution.")
+            return 0
+        gmail = Gmail()
+        message_ids = gmail.list_new_message_ids()
+        for message_id in message_ids:
+            try:
+                handle_message(gmail, message_id)
+            except Exception:
+                # One bad email must not stop the loop.
+                logger.exception("Failed to process %s", message_id)
+        return len(message_ids)
 
 
 def main() -> None:

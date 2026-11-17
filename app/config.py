@@ -6,10 +6,11 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
-    google_client_id: str
-    google_client_secret: str
-    google_refresh_token: str
-    database_url: str
+    database_url: str = ""
+    openai_api_key: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_refresh_token: str = ""
     classifier_model: str = "openai:gpt-6-luna"
     agent_model: str = "openai:gpt-6.1-sol"
     poll_interval_seconds: int = 60
