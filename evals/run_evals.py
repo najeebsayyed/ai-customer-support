@@ -38,5 +38,6 @@ dataset = Dataset(
 )
 
 if __name__ == "__main__":
-    report = dataset.evaluate_sync(run_pipeline, max_concurrency=4)
+    import asyncio
+    report = asyncio.run(dataset.evaluate(run_pipeline, max_concurrency=4, progress=False))
     report.print(include_input=False, include_output=True, include_durations=False)
