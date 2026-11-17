@@ -34,6 +34,8 @@ def acquire_poller_lock():
 
 
 def connect(retries: int = 3, delay: float = 0.5) -> psycopg.Connection:
+    if not settings.database_url or not settings.database_url.strip():
+        raise ValueError("DATABASE_URL environment variable is not configured.")
     last_err = None
     for attempt in range(retries):
         try:

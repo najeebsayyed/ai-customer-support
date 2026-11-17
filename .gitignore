@@ -1,14 +1,70 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Virtual environments
-.venv
+# Virtual environments & package managers
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables & secrets
 .env
-credentials.json
+.env.*
+!.env.example
+credentials*.json
+token*.json
+*.pem
+*.key
+*.cert
+*.crt
+
+# Testing & Linting
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node & Frontend
 node_modules/
+dashboard/node_modules/
 dashboard/dist/
+.eslintcache
+*.tsbuildinfo
+
+# Supabase local artifacts
+supabase/.branches/
+supabase/.temp/
+
+# IDE & Editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Operating System artifacts
+.DS_Store
+Thumbs.db
+desktop.ini

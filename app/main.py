@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import db
 from app.config import settings
@@ -16,10 +16,11 @@ logger = logging.getLogger("main")
 
 app = FastAPI(title="AI customer support")
 
+cors_origins = settings.get_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=cors_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,8 +44,8 @@ def require_login(credentials: HTTPBasicCredentials | None = Depends(security)) 
 
 
 class EntryUpdate(BaseModel):
-    title: str
-    content: str
+    title: str = Field(..., min_length=1, max_length=200, description="Title of the knowledge base entry")
+    content: str = Field(..., min_length=1, description="Markdown content of the knowledge base entry")
 
 
 api = APIRouter(prefix="/api", dependencies=[Depends(require_login)])
@@ -93,9 +94,9 @@ def poll() -> dict:
     try:
         count = poll_once()
         return {"messages": count}
-    except Exception as e:
-        logger.exception("Polling failed")
-        raise HTTPException(status_code=500, detail=f"Polling failed: {e}")
+    except Exception:
+        logger.exception("Manual polling failed")
+        raise HTTPException(status_code=500, detail="Internal polling error occurred. Please check server logs.")
 
 
 @app.get("/health")

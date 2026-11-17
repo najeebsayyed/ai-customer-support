@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     poll_interval_seconds: int = 60
     dashboard_username: str = "admin"
     dashboard_password: str = ""
+    cors_origins: str = "*"
+
+    def get_cors_origins(self) -> list[str]:
+        if not self.cors_origins or self.cors_origins.strip() == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 settings = Settings()
