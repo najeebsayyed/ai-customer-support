@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Activity,
   AlertCircle,
@@ -32,7 +32,7 @@ export function EventsPage() {
   const [pollMessage, setPollMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -43,10 +43,31 @@ export function EventsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    loadEvents()
+    let ignore = false
+    async function init() {
+      try {
+        setError(null)
+        const data = await fetchEvents()
+        if (!ignore) {
+          setEvents(data)
+        }
+      } catch (err: unknown) {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : "Failed to load events")
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false)
+        }
+      }
+    }
+    void init()
+    return () => {
+      ignore = true
+    }
   }, [])
 
   async function handleCheckInbox() {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   AlertCircle,
   BookOpen,
@@ -31,7 +31,26 @@ export function KnowledgeBasePage() {
     selectedEntry !== null &&
     (title !== selectedEntry.title || content !== selectedEntry.content)
 
-  const loadEntries = async () => {
+  const selectEntry = useCallback(
+    (entry: KnowledgeBaseEntry, checkDirty = true) => {
+      if (checkDirty && isDirty) {
+        const confirmDiscard = window.confirm(
+          "You have unsaved changes in this entry. Do you want to discard them?"
+        )
+        if (!confirmDiscard) return
+      }
+
+      setSelectedEntry(entry)
+      setTitle(entry.title)
+      setContent(entry.content)
+      setActiveSection(entry.section)
+      setSaveSuccess(null)
+      setError(null)
+    },
+    [isDirty]
+  )
+
+  const loadEntries = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -43,7 +62,7 @@ export function KnowledgeBasePage() {
           setActiveSection(data[0].section)
         }
         if (!selectedEntry) {
-          selectEntry(data[0])
+          selectEntry(data[0], false)
         } else {
           const updated = data.find((e) => e.id === selectedEntry.id)
           if (updated) {
@@ -58,27 +77,36 @@ export function KnowledgeBasePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeSection, selectedEntry, selectEntry])
 
   useEffect(() => {
-    loadEntries()
-  }, [])
-
-  function selectEntry(entry: KnowledgeBaseEntry) {
-    if (isDirty) {
-      const confirmDiscard = window.confirm(
-        "You have unsaved changes in this entry. Do you want to discard them?"
-      )
-      if (!confirmDiscard) return
+    let ignore = false
+    async function init() {
+      try {
+        setError(null)
+        const data = await fetchKnowledgeBase()
+        if (!ignore) {
+          setEntries(data)
+          if (data.length > 0) {
+            setActiveSection(data[0].section)
+            selectEntry(data[0], false)
+          }
+        }
+      } catch (err: unknown) {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : "Failed to load knowledge base")
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false)
+        }
+      }
     }
-
-    setSelectedEntry(entry)
-    setTitle(entry.title)
-    setContent(entry.content)
-    setActiveSection(entry.section)
-    setSaveSuccess(null)
-    setError(null)
-  }
+    void init()
+    return () => {
+      ignore = true
+    }
+  }, [selectEntry])
 
   function handleDiscard() {
     if (!selectedEntry) return

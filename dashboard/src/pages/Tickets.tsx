@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
   Bot,
@@ -29,33 +29,7 @@ export function TicketsPage() {
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [error, setError] = useState<string | null>(null)
 
-  const loadTickets = async () => {
-    try {
-      setLoadingTickets(true)
-      setError(null)
-      const data = await fetchTickets()
-      setTickets(data)
-
-      // If a ticket was previously selected, refresh its reference if still present
-      if (selectedTicket) {
-        const found = data.find((t) => t.id === selectedTicket.id)
-        if (found) setSelectedTicket(found)
-      } else if (data.length > 0) {
-        // Auto-select first ticket for a smooth desktop experience
-        openTicket(data[0])
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load tickets")
-    } finally {
-      setLoadingTickets(false)
-    }
-  }
-
-  useEffect(() => {
-    loadTickets()
-  }, [])
-
-  async function openTicket(ticket: Ticket) {
+  const openTicket = useCallback(async (ticket: Ticket) => {
     setSelectedTicket(ticket)
     setLoadingMessages(true)
     try {
@@ -66,7 +40,55 @@ export function TicketsPage() {
     } finally {
       setLoadingMessages(false)
     }
-  }
+  }, [])
+
+  const loadTickets = useCallback(async () => {
+    try {
+      setLoadingTickets(true)
+      setError(null)
+      const data = await fetchTickets()
+      setTickets(data)
+
+      if (selectedTicket) {
+        const found = data.find((t) => t.id === selectedTicket.id)
+        if (found) setSelectedTicket(found)
+      } else if (data.length > 0) {
+        void openTicket(data[0])
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load tickets")
+    } finally {
+      setLoadingTickets(false)
+    }
+  }, [openTicket, selectedTicket])
+
+  useEffect(() => {
+    let ignore = false
+    async function init() {
+      try {
+        setError(null)
+        const data = await fetchTickets()
+        if (!ignore) {
+          setTickets(data)
+          if (data.length > 0) {
+            void openTicket(data[0])
+          }
+        }
+      } catch (err: unknown) {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : "Failed to load tickets")
+        }
+      } finally {
+        if (!ignore) {
+          setLoadingTickets(false)
+        }
+      }
+    }
+    void init()
+    return () => {
+      ignore = true
+    }
+  }, [openTicket])
 
   // Derive categories from existing tickets
   const availableCategories = useMemo(() => {

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react"
 import { CheckCircle2, LogOut, Menu, User, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { checkHealth, getUsername, logout } from "@/lib/api"
-import type { NavTab } from "./Sidebar"
-import { NAV_ITEMS } from "./Sidebar"
+import type { NavTab } from "./nav"
+import { NAV_ITEMS } from "./nav"
 
 interface HeaderProps {
   currentTab: NavTab

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   AlertTriangle,
   ArrowRight,
@@ -27,7 +27,7 @@ export function OverviewPage({ onNavigateToTab }: OverviewPageProps) {
   const [polling, setPolling] = useState(false)
   const [pollResult, setPollResult] = useState<string | null>(null)
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -38,10 +38,31 @@ export function OverviewPage({ onNavigateToTab }: OverviewPageProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    loadData()
+    let ignore = false
+    async function init() {
+      try {
+        setError(null)
+        const data = await fetchOverview()
+        if (!ignore) {
+          setStats(data)
+        }
+      } catch (err: unknown) {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : "Failed to load overview data")
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false)
+        }
+      }
+    }
+    void init()
+    return () => {
+      ignore = true
+    }
   }, [])
 
   async function handleCheckInbox() {

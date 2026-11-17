@@ -1,7 +1,7 @@
-import React from "react"
-import { Activity, BookOpen, Bot, ChevronRight, Inbox, LayoutDashboard, Sparkles } from "lucide-react"
+import { Bot, ChevronRight, Sparkles } from "lucide-react"
+import { NAV_ITEMS, type NavTab } from "./nav"
 
-export type NavTab = "overview" | "events" | "tickets" | "knowledge-base"
+export type { NavTab }
 
 interface SidebarProps {
   currentTab: NavTab
@@ -11,33 +11,6 @@ interface SidebarProps {
     failedEvents?: number
   }
 }
-
-export const NAV_ITEMS: { id: NavTab; label: string; icon: React.ElementType; desc: string }[] = [
-  {
-    id: "overview",
-    label: "Overview",
-    icon: LayoutDashboard,
-    desc: "Metrics & live activity",
-  },
-  {
-    id: "events",
-    label: "Events",
-    icon: Activity,
-    desc: "Ingestion log & inbox poller",
-  },
-  {
-    id: "tickets",
-    label: "Tickets",
-    icon: Inbox,
-    desc: "Customer emails & AI replies",
-  },
-  {
-    id: "knowledge-base",
-    label: "Knowledge Base",
-    icon: BookOpen,
-    desc: "Edit company policies & docs",
-  },
-]
 
 export function Sidebar({ currentTab, onSelectTab, openCounts }: SidebarProps) {
   return (
