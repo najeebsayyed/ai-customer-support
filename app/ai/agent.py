@@ -23,7 +23,8 @@ Steps:
    For a slow leak, explain the valve check unless the customer already did it.
 5. Never promise a refund, a shipment, a replacement, a date, or a call. A colleague arranges those.
    Set promises_an_action to true if your reply promises one anyway.
-6. Set action to escalate when an escalation rule applies.
+6. Set action to "reply" when answering, giving instructions, or asking for missing details.
+   Set action to "escalate" when an escalation rule applies and no customer action is needed.
 
 Reply rules:
 - Write in the language of the customer's latest message.
@@ -64,3 +65,9 @@ def check_reply(ctx: RunContext[None], output: AgentReply) -> AgentReply:
 def write_reply(thread: str, section: str) -> AgentReply:
     prompt = f"Section picked by the classifier: {section}\n\n{thread}"
     return support_agent.run_sync(prompt).output
+
+
+async def write_reply_async(thread: str, section: str) -> AgentReply:
+    prompt = f"Section picked by the classifier: {section}\n\n{thread}"
+    result = await support_agent.run(prompt)
+    return result.output
