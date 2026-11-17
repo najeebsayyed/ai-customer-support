@@ -1,3 +1,4 @@
+import time
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -5,8 +6,16 @@ from psycopg.types.json import Jsonb
 from app.config import settings
 
 
-def connect() -> psycopg.Connection:
-    return psycopg.connect(settings.database_url, autocommit=True, row_factory=dict_row)
+def connect(retries: int = 3, delay: float = 0.5) -> psycopg.Connection:
+    last_err = None
+    for attempt in range(retries):
+        try:
+            return psycopg.connect(settings.database_url, autocommit=True, row_factory=dict_row)
+        except psycopg.OperationalError as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(delay)
+    raise last_err
 
 
 def start_event(gmail_message_id: str) -> dict | None:
@@ -95,3 +104,86 @@ def get_section(section: str) -> list[dict]:
             "select title, content from knowledge_base where section = %s order by id",
             (section,),
         ).fetchall()
+
+
+def list_events(limit: int = 100) -> list[dict]:
+    with connect() as conn:
+        return conn.execute(
+            "select * from events order by id desc limit %s", (limit,)
+        ).fetchall()
+
+
+def list_tickets(limit: int = 100) -> list[dict]:
+    with connect() as conn:
+        return conn.execute(
+            "select * from tickets order by updated_at desc limit %s", (limit,)
+        ).fetchall()
+
+
+def list_messages(ticket_id: int) -> list[dict]:
+    with connect() as conn:
+        return conn.execute(
+            "select * from messages where ticket_id = %s order by id asc", (ticket_id,)
+        ).fetchall()
+
+
+def list_knowledge_base() -> list[dict]:
+    with connect() as conn:
+        return conn.execute(
+            "select id, section, title, content, updated_at from knowledge_base order by section, id"
+        ).fetchall()
+
+
+def update_knowledge_base_entry(entry_id: int, title: str, content: str) -> dict | None:
+    with connect() as conn:
+        return conn.execute(
+            """
+            update knowledge_base set title = %s, content = %s, updated_at = now()
+            where id = %s returning id, section, title, content, updated_at
+            """,
+            (title, content, entry_id),
+        ).fetchone()
+
+
+def get_overview_stats() -> dict:
+    with connect() as conn:
+        processed_emails = conn.execute(
+            "select count(*) as count from events where status = 'processed'"
+        ).fetchone()["count"]
+        failed_events = conn.execute(
+            "select count(*) as count from events where status = 'failed'"
+        ).fetchone()["count"]
+        total_events = conn.execute(
+            "select count(*) as count from events"
+        ).fetchone()["count"]
+        open_tickets = conn.execute(
+            "select count(*) as count from tickets where status = 'open'"
+        ).fetchone()["count"]
+        answered_tickets = conn.execute(
+            "select count(*) as count from tickets where status = 'answered'"
+        ).fetchone()["count"]
+        escalated_tickets = conn.execute(
+            "select count(*) as count from tickets where status = 'escalated'"
+        ).fetchone()["count"]
+        total_tickets = conn.execute(
+            "select count(*) as count from tickets"
+        ).fetchone()["count"]
+
+        recent_events = conn.execute(
+            "select id, gmail_message_id, status, error, created_at, processed_at from events order by id desc limit 8"
+        ).fetchall()
+        recent_tickets = conn.execute(
+            "select id, customer_email, subject, category, status, updated_at from tickets order by updated_at desc limit 8"
+        ).fetchall()
+
+        return {
+            "processed_emails": processed_emails,
+            "failed_events": failed_events,
+            "total_events": total_events,
+            "open_tickets": open_tickets,
+            "answered_tickets": answered_tickets,
+            "escalated_tickets": escalated_tickets,
+            "total_tickets": total_tickets,
+            "recent_events": recent_events,
+            "recent_tickets": recent_tickets,
+        }
