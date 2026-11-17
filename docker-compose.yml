@@ -1,0 +1,20 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-customer-support:latest
+    container_name: ai-support-api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  poller:
+    image: ai-customer-support:latest
+    container_name: ai-support-poller
+    env_file: .env
+    command: ["python", "-m", "app.poller"]
+    restart: unless-stopped
+    depends_on:
+      - api

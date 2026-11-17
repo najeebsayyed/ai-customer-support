@@ -12,7 +12,10 @@ The system continuously monitors an incoming support inbox, triages messages wit
   - **Triage & Classification**: Fast model (`openai:gpt-6-luna`) categorizes inquiries and catches escalation triggers (anger, refund demands, legal threats, prompt injections).
   - **Grounded Drafting**: Reasoning model (`openai:gpt-6.1-sol`) queries the PostgreSQL knowledge base for factual product answers and draft replies.
   - **Deterministic Rule Enforcement**: Python logic enforces business constraints (e.g. asking for missing order numbers before sending replacements).
-- **Automated Gmail Poller**: Background worker that continuously polls for unread emails, updates message labels (`ai-processed`, `needs-human`), and sends email replies.
+- **Flexible Gmail Poller Execution**:
+  - **Continuous Poller**: Long-running background loop (`python -m app.poller`) for local development or traditional VPS deployments.
+  - **Scheduled One-Time Poller**: Single-cycle job worker (`python -m app.poller_once`) designed specifically for serverless cron jobs (Azure Container Apps Jobs, Kubernetes CronJobs).
+  - **Overlapping Execution Guard**: Protected by PostgreSQL advisory locks (`pg_try_advisory_lock`) to prevent race conditions across parallel jobs, workers, or manual dashboard triggers.
 - **PostgreSQL Database Integration**: Persistent storage for ingestion events, customer tickets, message threads, and editable knowledge base entries.
 - **Full-Featured Admin Dashboard**:
   - **Overview**: Real-time KPI metrics (Processed emails, Failed events, Open tickets, Answered tickets, Escalated tickets) and recent activity stream directly from PostgreSQL.
@@ -34,6 +37,7 @@ The system continuously monitors an incoming support inbox, triages messages wit
 - **PostgreSQL**: A database instance (e.g., free tier on [Supabase](https://supabase.com))
 - **OpenAI API Key**: For model inference
 - **Google Cloud Account**: With Gmail API enabled
+- **Docker**: For containerized local testing and cloud deployment
 
 ---
 
@@ -130,9 +134,12 @@ uv run python -m uvicorn app.main:app --port 8000 --reload
 
 #### Terminal 2: Gmail Poller Worker
 ```bash
+# Continuous poller loop
 uv run python -m app.poller
+
+# Or run a single polling cycle (Container App Job mode)
+uv run python -m app.poller_once
 ```
-*Monitors the Gmail inbox continuously every `POLL_INTERVAL_SECONDS` and triggers the AI pipeline.*
 
 #### Terminal 3: React Admin Dashboard (Vite Dev Server)
 ```bash
@@ -145,9 +152,9 @@ npm run dev
 
 ---
 
-### Step 7: Production Build
+### Step 7: Production Dashboard Build
 
-You can also compile the React dashboard into static assets:
+Compile the React dashboard into static assets:
 
 ```bash
 cd dashboard
@@ -160,6 +167,223 @@ When `dashboard/dist` exists, the FastAPI backend automatically serves the full 
 
 ---
 
+## 🐳 Docker & Local Container Testing
+
+The project includes a production-grade multi-stage `Dockerfile`:
+- **Stage 1 (Node 22)**: Builds the React/TypeScript dashboard with `npm ci` and `npm run build`.
+- **Stage 2 (Python 3.13-slim)**: Installs production Python dependencies with `uv sync --no-dev`, copies the application code, and mounts the compiled frontend at `/app/dashboard/dist`.
+
+### Build the Image
+
+```bash
+docker build -t ai-customer-support:latest .
+```
+
+### Run the API & Dashboard Container
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env ai-customer-support:latest
+```
+
+Verify in your browser:
+- Health probe: `curl http://127.0.0.1:8000/health` -> `{"status":"ok"}`
+- Dashboard & API: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+
+### Run the One-Time Poller in Docker
+
+```bash
+docker run --rm --env-file .env ai-customer-support:latest python -m app.poller_once
+```
+
+### Run with Docker Compose
+
+```bash
+# Starts both the FastAPI server and continuous poller
+docker compose up --build
+
+# Run one-off poller job via compose
+docker compose run --rm poller python -m app.poller_once
+```
+
+---
+
+## ☁️ Azure Container Apps Deployment Guide
+
+Deploy using **Azure Container Apps Consumption** for low cost and serverless scale-to-zero capability.
+
+### Architecture Overview
+
+```
+                      ┌────────────────────────────────────────┐
+                      │      Azure Container Apps Env          │
+                      │                                        │
+Internet ───────────► │  ┌──────────────────────────────────┐  │
+(HTTPS Port 443)      │  │  API & Dashboard Container App   │  │ ──► Supabase PostgreSQL
+                      │  │  uvicorn app.main:app:8000       │  │ ──► OpenAI API
+                      │  │  (Autoscale 0 to 3 replicas)     │  │
+                      │  └──────────────────────────────────┘  │
+                      │                                        │
+Cron Schedule ──────► │  ┌──────────────────────────────────┐  │
+(e.g. Every 2 mins)   │  │  Scheduled Poller App Job        │  │ ──► Gmail API
+                      │  │  python -m app.poller_once       │  │ ──► Supabase (Advisory Lock)
+                      │  │  (Runs & exits after 1 cycle)    │  │ ──► OpenAI API
+                      │  └──────────────────────────────────┘  │
+                      └────────────────────────────────────────┘
+```
+
+1. **API Service (`Container App`)**: Hosts FastAPI and the React Admin Dashboard. Accessible via external HTTPS URL with automatic SSL. Scales to zero when idle.
+2. **Scheduled Poller (`Container App Job`)**: Executes `python -m app.poller_once` on a cron schedule (e.g. every 2 minutes). Exits immediately when the polling cycle completes, billing only for execution seconds.
+3. **Overlapping Execution Protection**: PostgreSQL advisory locks ensure the scheduled job and manual dashboard polling never process the same messages concurrently.
+
+### Required Environment Variables
+
+| Variable | Required In API | Required In Poller Job | Description |
+| :--- | :---: | :---: | :--- |
+| `DATABASE_URL` | Yes | Yes | Supabase PostgreSQL connection string |
+| `OPENAI_API_KEY` | Yes | Yes | OpenAI API key (`sk-...`) |
+| `GOOGLE_CLIENT_ID` | Optional | Yes | Google Cloud OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | Optional | Yes | Google Cloud OAuth Client Secret |
+| `GOOGLE_REFRESH_TOKEN` | Optional | Yes | OAuth Refresh Token for Gmail account |
+| `DASHBOARD_USERNAME` | Yes | No | HTTP Basic Auth username (default: `admin`) |
+| `DASHBOARD_PASSWORD` | Yes | No | HTTP Basic Auth password |
+| `CLASSIFIER_MODEL` | Yes | Yes | OpenAI model for triage (`openai:gpt-6-luna`) |
+| `AGENT_MODEL` | Yes | Yes | OpenAI model for answering (`openai:gpt-6.1-sol`) |
+| `PYDANTIC_AI_NO_BANNER` | Yes | Yes | Suppresses banner in production logs (`1`) |
+
+---
+
+### Step-by-Step Azure CLI Deployment
+
+#### 1. Log in & Set Variables
+```bash
+az login
+
+RESOURCE_GROUP="rg-ai-support"
+LOCATION="eastus"
+ACR_NAME="acraisupport$RANDOM"
+ENV_NAME="env-ai-support"
+IMAGE_NAME="ai-customer-support:latest"
+```
+
+#### 2. Create Resource Group & Azure Container Registry (ACR)
+```bash
+# Create Resource Group
+az group create --name $RESOURCE_GROUP --location $LOCATION
+
+# Create Azure Container Registry
+az acr create \
+  --resource-group $RESOURCE_GROUP \
+  --name $ACR_NAME \
+  --sku Basic \
+  --admin-enabled true
+
+# Retrieve ACR credentials
+ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --query loginServer --output tsv)
+ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" --output tsv)
+```
+
+#### 3. Build & Push Container Image to ACR
+Use cloud build (no local Docker daemon required):
+```bash
+az acr build \
+  --registry $ACR_NAME \
+  --image $IMAGE_NAME .
+```
+
+#### 4. Create Container Apps Environment
+```bash
+az containerapp env create \
+  --name $ENV_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION
+```
+
+#### 5. Deploy the API & Dashboard Container App
+```bash
+az containerapp create \
+  --name ai-support-api \
+  --resource-group $RESOURCE_GROUP \
+  --environment $ENV_NAME \
+  --image "$ACR_LOGIN_SERVER/$IMAGE_NAME" \
+  --registry-server $ACR_LOGIN_SERVER \
+  --registry-username $ACR_NAME \
+  --registry-password "$ACR_PASSWORD" \
+  --target-port 8000 \
+  --ingress external \
+  --min-replicas 0 \
+  --max-replicas 3 \
+  --secrets \
+    db-url="$DATABASE_URL" \
+    openai-key="$OPENAI_API_KEY" \
+    g-id="$GOOGLE_CLIENT_ID" \
+    g-secret="$GOOGLE_CLIENT_SECRET" \
+    g-token="$GOOGLE_REFRESH_TOKEN" \
+    dash-pass="$DASHBOARD_PASSWORD" \
+  --env-vars \
+    DATABASE_URL=secretref:db-url \
+    OPENAI_API_KEY=secretref:openai-key \
+    GOOGLE_CLIENT_ID=secretref:g-id \
+    GOOGLE_CLIENT_SECRET=secretref:g-secret \
+    GOOGLE_REFRESH_TOKEN=secretref:g-token \
+    DASHBOARD_USERNAME="admin" \
+    DASHBOARD_PASSWORD=secretref:dash-pass \
+    CLASSIFIER_MODEL="openai:gpt-6-luna" \
+    AGENT_MODEL="openai:gpt-6.1-sol" \
+    PYDANTIC_AI_NO_BANNER="1"
+```
+
+*Retrieve your app's public URL:*
+```bash
+az containerapp show \
+  --name ai-support-api \
+  --resource-group $RESOURCE_GROUP \
+  --query "properties.configuration.ingress.fqdn" \
+  --output tsv
+```
+
+#### 6. Deploy the Scheduled Poller Container App Job
+```bash
+az containerapp job create \
+  --name ai-support-poller \
+  --resource-group $RESOURCE_GROUP \
+  --environment $ENV_NAME \
+  --image "$ACR_LOGIN_SERVER/$IMAGE_NAME" \
+  --registry-server $ACR_LOGIN_SERVER \
+  --registry-username $ACR_NAME \
+  --registry-password "$ACR_PASSWORD" \
+  --trigger-type Schedule \
+  --cron-expression "*/2 * * * *" \
+  --replica-timeout 180 \
+  --replica-retry-limit 1 \
+  --replica-completion-count 1 \
+  --parallelism 1 \
+  --command "python" "-m" "app.poller_once" \
+  --secrets \
+    db-url="$DATABASE_URL" \
+    openai-key="$OPENAI_API_KEY" \
+    g-id="$GOOGLE_CLIENT_ID" \
+    g-secret="$GOOGLE_CLIENT_SECRET" \
+    g-token="$GOOGLE_REFRESH_TOKEN" \
+  --env-vars \
+    DATABASE_URL=secretref:db-url \
+    OPENAI_API_KEY=secretref:openai-key \
+    GOOGLE_CLIENT_ID=secretref:g-id \
+    GOOGLE_CLIENT_SECRET=secretref:g-secret \
+    GOOGLE_REFRESH_TOKEN=secretref:g-token \
+    CLASSIFIER_MODEL="openai:gpt-6-luna" \
+    AGENT_MODEL="openai:gpt-6.1-sol" \
+    PYDANTIC_AI_NO_BANNER="1"
+```
+
+*Trigger a manual test execution of the poller job:*
+```bash
+az containerapp job start \
+  --name ai-support-poller \
+  --resource-group $RESOURCE_GROUP
+```
+
+---
+
 ## 🧪 Testing & Evals
 
 ### Run the Evaluation Benchmark
@@ -168,8 +392,8 @@ Verify that the AI pipeline passes all 18 test cases representing real-world cus
 uv run python -m evals.run_evals
 ```
 
-### Windows WDAC Note
-On Windows systems with Application Control (WDAC / AppLocker) enabled, always run Python commands via module syntax `uv run python -m <module>` (e.g. `uv run python -m uvicorn app.main:app`) rather than executing binary `.exe` stubs directly.
+### Windows WDAC / Smart App Control Note
+On Windows systems with Application Control (WDAC / AppLocker / Smart App Control) enabled, always run Python commands via module syntax `uv run python -m <module>` (e.g. `uv run python -m uvicorn app.main:app`) rather than executing binary `.exe` stubs directly.
 
 ---
 
@@ -180,12 +404,13 @@ ai-customer-support/
 ├── app/
 │   ├── ai/                   # AI agents, classifier, decision engine, & schemas
 │   ├── config.py             # App configuration & environment loader
-│   ├── db.py                 # PostgreSQL queries, aggregations, & connection management
+│   ├── db.py                 # PostgreSQL queries, advisory locks, & connection pooling
 │   ├── gmail.py              # Gmail API client & thread parsing utilities
 │   ├── guards.py             # Guardrails (filters out internal/automated emails)
 │   ├── main.py               # FastAPI backend with Basic Auth, REST API, & static mount
 │   ├── pipeline.py           # Main ticket processing pipeline
-│   └── poller.py             # Continuous polling loop worker
+│   ├── poller.py             # Continuous polling loop worker
+│   └── poller_once.py        # Single-cycle job worker for Azure Container Apps Jobs
 ├── dashboard/                # React Admin Dashboard
 │   ├── src/
 │   │   ├── components/
@@ -217,8 +442,11 @@ ai-customer-support/
 │   └── seed_knowledge_base.py# Seeds markdown articles into PostgreSQL
 ├── supabase/
 │   └── migrations/           # SQL table schemas & RLS policies
+├── .dockerignore             # Docker build context exclusions (secrets, venv, git)
 ├── .env.example              # Environment variable template
 ├── credentials.json          # Google OAuth client secrets (gitignored)
+├── Dockerfile                # Production multi-stage Docker build (Node 22 + Python 3.13)
+├── docker-compose.yml        # Multi-container orchestration (API + Poller)
 ├── pyproject.toml            # Python dependencies & project metadata
 └── README.md                 # Complete documentation
 ```

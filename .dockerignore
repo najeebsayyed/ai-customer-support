@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+credentials.json
+*.pem
+*.key
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Dashboard artifacts
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.oxlintrc.json
+
+# Development / testing
+evals/
+.pytest_cache/
+tests/
+.coverage
+htmlcov/
+scratch/
