@@ -239,7 +239,7 @@ Cron Schedule ──────► │  ┌────────────
 
 | Variable | Required In API | Required In Poller Job | Description |
 | :--- | :---: | :---: | :--- |
-| `DATABASE_URL` | Yes | Yes | Supabase PostgreSQL connection string |
+| `DATABASE_URL` | Yes | Yes | Supabase PostgreSQL connection string (use IPv4 Pooler URL on Azure) |
 | `OPENAI_API_KEY` | Yes | Yes | OpenAI API key (`sk-...`) |
 | `GOOGLE_CLIENT_ID` | Optional | Yes | Google Cloud OAuth Client ID |
 | `GOOGLE_CLIENT_SECRET` | Optional | Yes | Google Cloud OAuth Client Secret |
@@ -249,6 +249,12 @@ Cron Schedule ──────► │  ┌────────────
 | `CLASSIFIER_MODEL` | Yes | Yes | OpenAI model for triage (`openai:gpt-6-luna`) |
 | `AGENT_MODEL` | Yes | Yes | OpenAI model for answering (`openai:gpt-6.1-sol`) |
 | `PYDANTIC_AI_NO_BANNER` | Yes | Yes | Suppresses banner in production logs (`1`) |
+
+> [!IMPORTANT]
+> **Supabase IPv4 Connection Pooler on Azure Container Apps**:
+> Azure Container Apps environments do not support outbound IPv6 network traffic. Because Supabase direct connection hostnames (`db.<project-ref>.supabase.co:5432`) resolve to IPv6 by default, you must configure `DATABASE_URL` using the Supabase Connection Pooler in **session mode** (port `5432`):
+> `postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
+> Session mode (`5432`) preserves support for PostgreSQL advisory locks (`pg_try_advisory_lock`), preventing overlapping poller executions.
 
 ---
 
@@ -357,7 +363,8 @@ az containerapp job create \
   --replica-retry-limit 1 \
   --replica-completion-count 1 \
   --parallelism 1 \
-  --command "python" "-m" "app.poller_once" \
+  --command "/app/.venv/bin/python" "-m" "app.poller_once" \
+  --args "" \
   --secrets \
     db-url="$DATABASE_URL" \
     openai-key="$OPENAI_API_KEY" \
